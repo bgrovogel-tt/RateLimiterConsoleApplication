@@ -11,7 +11,7 @@ namespace RateLimiterConsoleApplication
 
         public RateLimiter(Dictionary<TimeSpan, int> limits)
         {
-            _limits = limits;
+            _limits = limits ?? throw new ArgumentNullException(nameof(limits));
             _requestTimes = new Dictionary<TimeSpan, Queue<DateTime>>();
 
             foreach (KeyValuePair<TimeSpan, int> limit in _limits)
@@ -41,17 +41,8 @@ namespace RateLimiterConsoleApplication
 
                     if (requestQueue.Count >= maxRequests)
                     {
-                        if (requestQueue.Count > 0)
-                        {
-                            remainingTime = timeWindow - (now - requestQueue.Peek());
-                        }
-                        else
-                        {
-                            remainingTime = timeWindow;
-                        }
-
-                        Console.WriteLine(
-                            $"Request Blocked: Exceeded limit of {maxRequests} requests per {timeWindow}. Time remaining: {remainingTime.TotalSeconds} seconds.");
+                        remainingTime = requestQueue.Count > 0 ? timeWindow - (now - requestQueue.Peek()) : timeWindow;
+                        Console.WriteLine($"Request Blocked: Exceeded limit of {maxRequests} requests per {timeWindow}. Time remaining: {remainingTime.TotalSeconds} seconds.");
                         return false;
                     }
                 }
