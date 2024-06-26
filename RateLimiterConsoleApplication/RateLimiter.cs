@@ -1,17 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace RateLimiterConsoleApplication
 {
     public class RateLimiter
     {
+        private readonly TimeUnit _timeUnit;
         private readonly Dictionary<TimeSpan, int> _limits;
         private readonly Dictionary<TimeSpan, LinkedList<DateTime>> _requestTimes;
         private readonly object _lock = new object();
 
-        public RateLimiter(Dictionary<TimeSpan, int> limits)
+        public RateLimiter(TimeUnit timeUnit, Dictionary<TimeSpan, int> limits)
         {
+            _timeUnit = timeUnit;
             _limits = limits ?? throw new ArgumentNullException(nameof(limits));
             _requestTimes = new Dictionary<TimeSpan, LinkedList<DateTime>>();
 
@@ -42,7 +43,7 @@ namespace RateLimiterConsoleApplication
                     if (requestList.Count >= maxRequests)
                     {
                         remainingTime = requestList.Count > 0 ? timeWindow - (now - requestList.First.Value) : timeWindow;
-                        Console.WriteLine($"Request Blocked: Exceeded limit of {maxRequests} requests per {timeWindow}. Time remaining: {remainingTime.TotalSeconds} seconds.");
+                        Console.WriteLine($"[{now}] Request Blocked: Exceeded limit of {maxRequests} requests per {timeWindow}. Time remaining: {remainingTime.TotalSeconds} seconds.");
                         return false;
                     }
                 }
@@ -52,7 +53,7 @@ namespace RateLimiterConsoleApplication
                     _requestTimes[timeWindow].AddLast(now);
                 }
 
-                Console.WriteLine($"[{now}] Request Allowed.");
+                Console.WriteLine($"[{now}] Request Allowed. [{_timeUnit}]");
                 return true;
             }
         }

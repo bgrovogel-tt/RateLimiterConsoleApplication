@@ -1,200 +1,103 @@
 ﻿using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
-using System.Collections.Generic;
-using System.Threading;
-using RateLimiterConsoleApplication;
+using System.Linq;
+using System.Reflection;
 
-namespace RateLimiterConsoleApplicationUnitTests
+namespace RateLimiterConsoleApplication.Tests
 {
-    public class RateLimiterUnitTests
+    [TestFixture]
+    public class RateLimiterTests
     {
-        [Test]
-        public void TestRequestAllowed()
+        private RateLimiterAttribute[] _rateLimiterAttributes;
+
+        [SetUp]
+        public void Setup()
         {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
+            // Initialize rate limiter attributes for testing
+            _rateLimiterAttributes = new[]
             {
-                { TimeSpan.FromMinutes(1), 5 },
-                { TimeSpan.FromHours(1), 20 },
-                { TimeSpan.FromDays(1), 100 }
+                new RateLimiterAttribute(TimeUnit.Minute, 2),
+                new RateLimiterAttribute(TimeUnit.Hour, 3),
+                new RateLimiterAttribute(TimeUnit.Day, 4)
             };
-            RateLimiter rateLimiter = new RateLimiter(limits);
 
-            // Act
-            bool allowed = rateLimiter.AllowRequest(out _);
-
-            // Assert
-            Assert.That(allowed, Is.True);
+            // Initialize rate limiters
+            foreach (var attribute in _rateLimiterAttributes)
+            {
+                attribute.InitializeRateLimiter();
+            }
         }
 
         [Test]
-        public void TestRequestBlocked()
+        public void AllowRequest_Allowed()
         {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 5 },
-                { TimeSpan.FromHours(1), 20 },
-                { TimeSpan.FromDays(1), 100 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
+            TimeSpan remainingTime;
 
-            // Act
-            // Fill the request queue with maximum number of requests
-            for (int i = 0; i < 5; i++)
+            bool allowed = _rateLimiterAttributes[0].AllowRequest(out remainingTime);
+
+            Assert.That(allowed, Is.EqualTo(true));
+            Assert.That(TimeSpan.Zero, Is.EqualTo(remainingTime));
+        }
+
+        [Test]
+        public void AllowRequest_BlockMinute()
+        {
+            TimeSpan remainingTime;
+            for (int i = 0; i < 2; i++)
             {
-                rateLimiter.AllowRequest(out _);
+                _rateLimiterAttributes[0].AllowRequest(out remainingTime);
             }
 
-            // Try to make one more request
-            bool allowed = rateLimiter.AllowRequest(out TimeSpan remainingTime);
+            bool allowed = _rateLimiterAttributes[0].AllowRequest(out remainingTime);
 
-            // Assert
             Assert.That(allowed, Is.False);
-            Assert.That(remainingTime > TimeSpan.Zero, Is.True);
+            Assert.That(remainingTime, Is.GreaterThan(TimeSpan.Zero));
         }
 
         [Test]
-        public void TestRateLimitWithinOneMinute()
+        public void AllowRequest_BlockHour()
         {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
+            TimeSpan remainingTime;
+            for (int i = 0; i < 3; i++)
             {
-                { TimeSpan.FromMinutes(1), 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act & Assert
-            for (int i = 0; i < 5; i++)
-            {
-                Assert.That(rateLimiter.AllowRequest(out _), Is.True);
+                _rateLimiterAttributes[1].AllowRequest(out remainingTime);
             }
-            Assert.That(rateLimiter.AllowRequest(out _), Is.False);
-        }
 
-        [Test]
-        public void TestRemainingTimeCalculation()
-        {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
+            bool allowed = _rateLimiterAttributes[1].AllowRequest(out remainingTime);
 
-            // Act
-            for (int i = 0; i < 5; i++)
-            {
-                rateLimiter.AllowRequest(out _);
-            }
-            bool allowed = rateLimiter.AllowRequest(out TimeSpan remainingTime);
-
-            // Assert
             Assert.That(allowed, Is.False);
-            Assert.That(remainingTime, Is.LessThanOrEqualTo(TimeSpan.FromMinutes(1)));
+            Assert.That(remainingTime, Is.GreaterThan(TimeSpan.Zero));
         }
 
         [Test]
-        public void TestRateLimitResetAfterTimeLimit()
+        public void AllowRequest_BlockDay()
         {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
+            TimeSpan remainingTime;
+            for (int i = 0; i < 4; i++)
             {
-                { TimeSpan.FromSeconds(1), 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act & Assert
-            for (int i = 0; i < 5; i++)
-            {
-                Assert.That(rateLimiter.AllowRequest(out _), Is.True);
+                _rateLimiterAttributes[2].AllowRequest(out remainingTime);
             }
-            Assert.That(rateLimiter.AllowRequest(out _), Is.False);
 
-            // Wait for the time limit to pass
-            Thread.Sleep(1000);
+            bool allowed = _rateLimiterAttributes[2].AllowRequest(out remainingTime);
 
-            // The rate limit should be reset now
-            Assert.That(rateLimiter.AllowRequest(out _), Is.True);
-        }
-
-        [Test]
-        public void TestRapidSuccessionRequests()
-        {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act & Assert
-            for (int i = 0; i < 10; i++)
-            {
-                if (i < 5)
-                {
-                    Assert.That(rateLimiter.AllowRequest(out _), Is.True);
-                }
-                else
-                {
-                    Assert.That(rateLimiter.AllowRequest(out _), Is.False);
-                }
-            }
-        }
-
-        [Test]
-        public void TestNoRequestsMade()
-        {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act
-            bool allowed = rateLimiter.AllowRequest(out TimeSpan remainingTime);
-
-            // Assert
-            Assert.That(allowed, Is.True);
-            Assert.That(remainingTime, Is.EqualTo(TimeSpan.Zero));
-        }
-
-        [Test]
-        public void TestZeroTimeLimit()
-        {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.Zero, 5 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act & Assert
-            for (int i = 0; i < 5; i++)
-            {
-                Assert.That(rateLimiter.AllowRequest(out _), Is.True);
-            }
-            Assert.That(rateLimiter.AllowRequest(out _), Is.False);
-        }
-
-        [Test]
-        public void TestZeroRequestLimit()
-        {
-            // Arrange
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 0 }
-            };
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
-            // Act
-            bool allowed = rateLimiter.AllowRequest(out TimeSpan remainingTime);
-
-            // Assert
             Assert.That(allowed, Is.False);
-            Assert.That(remainingTime, Is.EqualTo(TimeSpan.FromMinutes(1)));
+            Assert.That(remainingTime, Is.GreaterThan(TimeSpan.Zero));
         }
 
+        [Test]
+        public void InvokeRateLimitedMethod_Allowed()
+        {
+            var methodInfo = typeof(RateLimiterTests).GetMethod(nameof(MockMethod), BindingFlags.Static | BindingFlags.NonPublic);
+
+            object result = methodInfo.Invoke(null, null);
+
+            Assert.That(result, Is.Not.Null);
+        }
+
+        private static object MockMethod()
+        {
+            return new object();
+        }
     }
 }

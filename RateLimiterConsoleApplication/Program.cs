@@ -1,25 +1,21 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 
 namespace RateLimiterConsoleApplication
 {
     public class Program
     {
+        private static RateLimiterAttribute[] _rateLimiterAttributes;
+
+        [RateLimiter(TimeUnit.Minute, 2)]
+        [RateLimiter(TimeUnit.Hour, 3)]
+        [RateLimiter(TimeUnit.Day, 4)]
         public static void Main(string[] args)
         {
-            // Set the rate limits: 3 requests per minute, 5 per hour, 9 per day
-            var limits = new Dictionary<TimeSpan, int>
-            {
-                { TimeSpan.FromMinutes(1), 3 },
-                { TimeSpan.FromHours(1), 5 },
-                { TimeSpan.FromDays(1), 9 }
-            };
-
-            RateLimiter rateLimiter = new RateLimiter(limits);
-
+            InitializeRateLimiters();
             Console.WriteLine("Press Enter to make a request. Press 'Q' to quit.");
 
-            // Loop until the user quits
             while (true)
             {
                 Console.WriteLine("Waiting for user input...");
@@ -27,12 +23,7 @@ namespace RateLimiterConsoleApplication
 
                 if (keyInfo.Key == ConsoleKey.Enter)
                 {
-                    TimeSpan remainingTime;
-                    bool allowed = rateLimiter.AllowRequest(out remainingTime);
-                    if (!allowed)
-                    {
-                        Console.WriteLine($"Request Blocked. Time remaining: {remainingTime.TotalSeconds} seconds.");
-                    }
+                    InvokeRateLimitedMethod(nameof(HandleRequest));
                 }
                 else if (keyInfo.Key == ConsoleKey.Q)
                 {
@@ -43,6 +34,62 @@ namespace RateLimiterConsoleApplication
                 {
                     Console.WriteLine("Invalid input. Press Enter to make a request. Press 'Q' to quit.");
                 }
+            }
+        }
+
+        private static void HandleRequest()
+        {
+            Console.WriteLine("Request Handled.");
+        }
+
+        private static void InitializeRateLimiters()
+        {
+            MethodInfo method = typeof(Program).GetMethod(nameof(Main), BindingFlags.Static | BindingFlags.Public);
+            var attributes = method.GetCustomAttributes(typeof(RateLimiterAttribute), true)
+                .Cast<RateLimiterAttribute>()
+                .OrderByDescending(attr => attr.TimeUnit) // Ensure higher time units are checked first
+                .ToArray();
+
+            _rateLimiterAttributes = attributes;
+
+            foreach (var attribute in _rateLimiterAttributes)
+            {
+                attribute.InitializeRateLimiter();
+            }
+        }
+
+        private static void InvokeRateLimitedMethod(string methodName)
+        {
+            if (_rateLimiterAttributes != null)
+            {
+                TimeSpan maxRemainingTime = TimeSpan.Zero;
+                bool allowed = true;
+
+                foreach (var attribute in _rateLimiterAttributes)
+                {
+                    TimeSpan remainingTime;
+                    if (!attribute.AllowRequest(out remainingTime))
+                    {
+                        allowed = false;
+                        maxRemainingTime = remainingTime;
+                        break; // Break the loop on first blocked request
+                    }
+                }
+
+                if (allowed)
+                {
+                    MethodInfo method = typeof(Program).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic);
+                    method?.Invoke(null, null);
+                }
+                else
+                {
+                    Console.WriteLine($"Request Blocked. Time remaining: {maxRemainingTime.TotalSeconds} seconds.");
+                }
+            }
+            else
+            {
+                MethodInfo method = typeof(Program).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic);
+                method?.Invoke(null, null);
             }
         }
     }
