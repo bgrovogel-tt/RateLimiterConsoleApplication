@@ -1,22 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace RateLimiterConsoleApplication
 {
     public class RateLimiter
     {
         private readonly Dictionary<TimeSpan, int> _limits;
-        private readonly Dictionary<TimeSpan, Queue<DateTime>> _requestTimes;
+        private readonly Dictionary<TimeSpan, LinkedList<DateTime>> _requestTimes;
         private readonly object _lock = new object();
 
         public RateLimiter(Dictionary<TimeSpan, int> limits)
         {
             _limits = limits ?? throw new ArgumentNullException(nameof(limits));
-            _requestTimes = new Dictionary<TimeSpan, Queue<DateTime>>();
+            _requestTimes = new Dictionary<TimeSpan, LinkedList<DateTime>>();
 
             foreach (KeyValuePair<TimeSpan, int> limit in _limits)
             {
-                _requestTimes[limit.Key] = new Queue<DateTime>();
+                _requestTimes[limit.Key] = new LinkedList<DateTime>();
             }
         }
 
@@ -25,7 +26,6 @@ namespace RateLimiterConsoleApplication
             lock (_lock)
             {
                 DateTime now = DateTime.UtcNow;
-
                 remainingTime = TimeSpan.Zero;
 
                 foreach (KeyValuePair<TimeSpan, int> limit in _limits)
@@ -33,15 +33,15 @@ namespace RateLimiterConsoleApplication
                     TimeSpan timeWindow = limit.Key;
                     int maxRequests = limit.Value;
 
-                    Queue<DateTime> requestQueue = _requestTimes[timeWindow];
-                    while (requestQueue.Count > 0 && (now - requestQueue.Peek()) > timeWindow)
+                    LinkedList<DateTime> requestList = _requestTimes[timeWindow];
+                    while (requestList.Count > 0 && (now - requestList.First.Value) > timeWindow)
                     {
-                        requestQueue.Dequeue();
+                        requestList.RemoveFirst();
                     }
 
-                    if (requestQueue.Count >= maxRequests)
+                    if (requestList.Count >= maxRequests)
                     {
-                        remainingTime = requestQueue.Count > 0 ? timeWindow - (now - requestQueue.Peek()) : timeWindow;
+                        remainingTime = requestList.Count > 0 ? timeWindow - (now - requestList.First.Value) : timeWindow;
                         Console.WriteLine($"Request Blocked: Exceeded limit of {maxRequests} requests per {timeWindow}. Time remaining: {remainingTime.TotalSeconds} seconds.");
                         return false;
                     }
@@ -49,10 +49,10 @@ namespace RateLimiterConsoleApplication
 
                 foreach (TimeSpan timeWindow in _limits.Keys)
                 {
-                    _requestTimes[timeWindow].Enqueue(now);
+                    _requestTimes[timeWindow].AddLast(now);
                 }
 
-                Console.WriteLine("Request Allowed.");
+                Console.WriteLine($"[{now}] Request Allowed.");
                 return true;
             }
         }
